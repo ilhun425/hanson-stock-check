@@ -60,6 +60,11 @@ h1 { font-size: 22px; font-weight: 600; margin: 0; letter-spacing: -0.01em; text
 .drop .meta { font-size: 13px; color: var(--ink-2); }
 .drop .warn { font-size: 13px; color: var(--part); }
 .drop .err { font-size: 13px; color: var(--ord); }
+.auto { margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--line-2); display: flex; flex-direction: column; gap: 6px; }
+.auto-st { font-size: 13px; color: var(--sky-ink); }
+.auto-st.bad { color: var(--ord); }
+.auto-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.auto-row input[type=password] { font: inherit; font-size: 13px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); min-width: 0; flex: 1 1 140px; }
 .drop label.btn { margin-top: 6px; align-self: flex-start; }
 .drop input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .drop select { margin-top: 6px; max-width: 100%; font: inherit; font-size: 13px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); }
@@ -157,12 +162,24 @@ details.rel li span { font-variant-numeric: tabular-nums; }
       <div class="tag" aria-hidden="true">재고</div>
       <div class="body">
         <span class="ttl">재고현황 엑셀</span>
-        <span class="meta">이카운트 재고현황 내보내기 (그날 날짜 파일)</span>
+        <span class="meta">PC 프로그램이 평일 매시간 올리는 최신 재고를 자동으로 불러옵니다. 엑셀을 직접 고를 수도 있습니다.</span>
         <span class="fname" id="inv-fname"></span>
         <span class="meta" id="inv-meta"></span>
         <span class="warn" id="inv-warn" hidden></span>
         <span class="err" id="inv-err" hidden></span>
-        <label class="btn" for="inv-file">파일 선택</label>
+        <div class="auto" id="auto-box">
+          <span class="auto-st" id="auto-st">자동 재고: 아직 불러오지 않았습니다.</span>
+          <div class="auto-row" id="auto-pass-row" hidden>
+            <input type="password" id="auto-pass" placeholder="앱 암호" autocomplete="current-password" aria-label="앱 암호">
+            <label class="toggle"><input type="checkbox" id="auto-remember" checked> 이 기기에 기억</label>
+            <button class="btn primary" type="button" id="auto-go">불러오기</button>
+          </div>
+          <div class="auto-row">
+            <button class="btn" type="button" id="auto-reload" hidden>최신 재고 다시 불러오기</button>
+            <button class="btn" type="button" id="auto-forget" hidden>암호 지우기</button>
+          </div>
+        </div>
+        <label class="btn" for="inv-file">파일 직접 선택</label>
         <input type="file" id="inv-file" accept=".xlsx,.xlsm,.xls">
       </div>
     </div>
@@ -179,12 +196,32 @@ details.rel li span { font-variant-numeric: tabular-nums; }
 
   <div class="table" id="table" role="table" aria-label="품목별 재고 대조"></div>
   <p class="note">같은 모델이 여러 항목에 있으면 수량을 합쳐 한 줄로 봅니다. 모델이 A+B처럼 구성품으로 적혀 있으면 구성품마다 따로 봅니다. 체크한 재고 품목만 가용 수량에 들어가고, 표기가 비슷한 품목은 직접 확인한 뒤 체크해 주세요.</p>
-  <p class="note muted" style="margin:0">핸썬 기술영업팀 · 버전 2026.10.27 · 넣은 파일은 이 기기 안에서만 읽고 어디에도 보내지 않습니다.</p>
+  <p class="note muted" style="margin:0">핸썬 기술영업팀 · 버전 2026.10.27-2 · 넣은 파일은 이 기기 안에서만 읽고 어디에도 보내지 않습니다.</p>
 </div>
 <div class="toast" id="toast" hidden></div>
 <script>if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));</script>
 
 <script src="xlsx.full.min.js"></script>
+<script>
+/* 잠긴 재고 파일 풀기 (브라우저 WebCrypto) */
+(function (root) {
+  const b64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+  async function unlockStock(box, pass) {
+    const subtle = (root.crypto || globalThis.crypto).subtle;
+    const base = await subtle.importKey('raw', new TextEncoder().encode(pass), 'PBKDF2', false, ['deriveBits']);
+    const bits = new Uint8Array(await subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: b64(box.salt), iterations: Number(box.iter) }, base, 512));
+    const iv = b64(box.iv), ct = b64(box.ct), mac = b64(box.mac);
+    const macKey = await subtle.importKey('raw', bits.slice(32, 64), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
+    const signed = new Uint8Array(iv.length + ct.length); signed.set(iv); signed.set(ct, iv.length);
+    if (!(await subtle.verify('HMAC', macKey, mac, signed))) { const e = new Error('암호가 맞지 않습니다.'); e.code = 'bad_pass'; throw e; }
+    const encKey = await subtle.importKey('raw', bits.slice(0, 32), { name: 'AES-CBC' }, false, ['decrypt']);
+    return await subtle.decrypt({ name: 'AES-CBC', iv }, encKey, ct);
+  }
+  root.HSUnlock = unlockStock;
+  if (typeof module !== 'undefined') module.exports = unlockStock;
+})(typeof window !== 'undefined' ? window : globalThis);
+
+</script>
 <script>
 /* 스펙북 ↔ 재고현황 대조 엔진 (브라우저·node 공용). XLSX(SheetJS) 전역 또는 인자로 받음 */
 (function (root) {
@@ -619,6 +656,43 @@ details.rel li span { font-variant-numeric: tabular-nums; }
   };
   let tt = null;
   function toast(msg) { const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(tt); tt = setTimeout(() => { t.hidden = true; }, 2600); }
+
+  /* ---------- 자동 재고 (PC 프로그램이 매시간 올린 잠긴 파일) ---------- */
+  const AUTO_URLS = ['https://raw.githubusercontent.com/ilhun425/hanson-stock-check/main/data/stock.json', 'data/stock.json'];
+  const KEY = 'hs-stock-pass';
+  const store = { get() { try { return localStorage.getItem(KEY); } catch { return null; } }, set(v) { try { localStorage.setItem(KEY, v); } catch {} }, del() { try { localStorage.removeItem(KEY); } catch {} } };
+  let sessionPass = null;
+  function autoStatus(msg, bad) { const el = $('auto-st'); el.textContent = msg; el.classList.toggle('bad', !!bad); }
+  function showPass(show) { $('auto-pass-row').hidden = !show; $('auto-reload').hidden = show; $('auto-forget').hidden = show || !store.get(); }
+  async function fetchBox() {
+    let last = null;
+    for (const u of AUTO_URLS) {
+      try { const r = await fetch(u + '?t=' + Date.now(), { cache: 'no-store' }); if (r.ok) return await r.json(); last = new Error('HTTP ' + r.status); } catch (e) { last = e; }
+    }
+    throw last || new Error('불러오지 못했습니다.');
+  }
+  async function loadAuto(pass, remember) {
+    autoStatus('자동 재고를 불러오는 중…');
+    let box;
+    try { box = await fetchBox(); } catch { autoStatus('자동 재고를 불러오지 못했습니다. 인터넷 연결을 확인하거나 파일을 직접 선택해 주세요.', true); showPass(!pass); return; }
+    try {
+      const buf = await HSUnlock(box, pass);
+      const inv = E.parseInventory(XLSX, XLSX.read(new Uint8Array(buf), { type: 'array' }));
+      if (remember) store.set(pass); sessionPass = pass;
+      state.inv = inv; state.invFile = '자동 재고 (' + box.time + ' 기준)'; leaveSample();
+      $('drop-inv').classList.add('loaded'); $('inv-fname').textContent = state.invFile; $('inv-err').hidden = true;
+      renderInvMeta(); autoStatus('자동 재고: ' + box.time + ' 기준으로 불러왔습니다.');
+      showPass(false); recompute();
+    } catch (e) {
+      if (e && e.code === 'bad_pass') { store.del(); autoStatus('암호가 맞지 않습니다. 다시 입력해 주세요.', true); showPass(true); }
+      else autoStatus('자동 재고를 여는 중 문제가 생겼습니다. 파일을 직접 선택해 주세요.', true);
+    }
+  }
+  $('auto-go').onclick = () => { const v = $('auto-pass').value; if (!v) { $('auto-pass').focus(); return; } $('auto-pass').value = ''; loadAuto(v, $('auto-remember').checked); };
+  $('auto-pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('auto-go').click(); });
+  $('auto-reload').onclick = () => { const p = sessionPass || store.get(); if (p) loadAuto(p, false); else showPass(true); };
+  $('auto-forget').onclick = () => { store.del(); sessionPass = null; autoStatus('이 기기에 저장된 암호를 지웠습니다.'); showPass(true); };
+  { const saved = store.get(); if (saved) loadAuto(saved, false); else showPass(true); }
 
   /* ---------- 입력 연결 ---------- */
   function wire(dropId, inputId, fn) {
