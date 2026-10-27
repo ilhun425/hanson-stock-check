@@ -1,5 +1,5 @@
 // 스펙북 재고 대조 — 오프라인 캐시. 파일을 고치면 VERSION을 올려 주세요.
-const VERSION = 'v2026.10.27-2';
+const VERSION = 'v2026.10.27-3';
 const FILES = ['./', 'index.html', 'xlsx.full.min.js', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(VERSION).then((c) => c.addAll(FILES))); self.skipWaiting(); });

@@ -149,7 +149,7 @@ details.rel li span { font-variant-numeric: tabular-nums; }
       <div class="tag" aria-hidden="true">스펙</div>
       <div class="body">
         <span class="ttl">스펙북 엑셀</span>
-        <span class="meta">엄지하우스·두양건축·서울파이낸스센터 양식, 또는 모델·수량 열이 있는 목록</span>
+        <span class="meta">스펙북 혹은 다른 모델·수량 열이 있는 목록</span>
         <span class="fname" id="spec-fname"></span>
         <span class="meta" id="spec-meta"></span>
         <span class="err" id="spec-err" hidden></span>
@@ -162,7 +162,7 @@ details.rel li span { font-variant-numeric: tabular-nums; }
       <div class="tag" aria-hidden="true">재고</div>
       <div class="body">
         <span class="ttl">재고현황 엑셀</span>
-        <span class="meta">PC 프로그램이 평일 매시간 올리는 최신 재고를 자동으로 불러옵니다. 엑셀을 직접 고를 수도 있습니다.</span>
+        <span class="meta">PC 프로그램이 평일 매시간 올리는 최신 재고를 자동으로 불러옵니다.</span>
         <span class="fname" id="inv-fname"></span>
         <span class="meta" id="inv-meta"></span>
         <span class="warn" id="inv-warn" hidden></span>
@@ -179,8 +179,6 @@ details.rel li span { font-variant-numeric: tabular-nums; }
             <button class="btn" type="button" id="auto-forget" hidden>암호 지우기</button>
           </div>
         </div>
-        <label class="btn" for="inv-file">파일 직접 선택</label>
-        <input type="file" id="inv-file" accept=".xlsx,.xlsm,.xls">
       </div>
     </div>
   </section>
@@ -196,7 +194,7 @@ details.rel li span { font-variant-numeric: tabular-nums; }
 
   <div class="table" id="table" role="table" aria-label="품목별 재고 대조"></div>
   <p class="note">같은 모델이 여러 항목에 있으면 수량을 합쳐 한 줄로 봅니다. 모델이 A+B처럼 구성품으로 적혀 있으면 구성품마다 따로 봅니다. 체크한 재고 품목만 가용 수량에 들어가고, 표기가 비슷한 품목은 직접 확인한 뒤 체크해 주세요.</p>
-  <p class="note muted" style="margin:0">핸썬 기술영업팀 · 버전 2026.10.27-2 · 넣은 파일은 이 기기 안에서만 읽고 어디에도 보내지 않습니다.</p>
+  <p class="note muted" style="margin:0">핸썬 기술영업팀 · 버전 2026.10.27-3 · 넣은 파일은 이 기기 안에서만 읽고 어디에도 보내지 않습니다.</p>
 </div>
 <div class="toast" id="toast" hidden></div>
 <script>if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));</script>
@@ -537,10 +535,8 @@ details.rel li span { font-variant-numeric: tabular-nums; }
     const tbl = $('table'); tbl.replaceChildren();
     const ready = state.lines.length > 0;
     $('copy-btn').disabled = !ready; $('save-btn').disabled = !ready;
-    if (!ready) {
-      const msg = !state.spec && !state.inv ? '스펙북과 재고현황 엑셀을 넣어 주세요.' : !state.spec ? '스펙북 엑셀을 넣어 주세요.' : '재고현황 엑셀을 넣어 주세요.';
-      tbl.append(el('div', 'empty', msg)); $('chips').replaceChildren(); return;
-    }
+    tbl.hidden = !ready;
+    if (!ready) { $('chips').replaceChildren(); return; }
     const showUnused = $('show-unused').checked;
     const judged = state.lines.map((l, i) => ({ l, i, j: judgeAt(i) }));
     // 칩
@@ -674,7 +670,7 @@ details.rel li span { font-variant-numeric: tabular-nums; }
   async function loadAuto(pass, remember) {
     autoStatus('자동 재고를 불러오는 중…');
     let box;
-    try { box = await fetchBox(); } catch { autoStatus('자동 재고를 불러오지 못했습니다. 인터넷 연결을 확인하거나 파일을 직접 선택해 주세요.', true); showPass(!pass); return; }
+    try { box = await fetchBox(); } catch { autoStatus('자동 재고를 불러오지 못했습니다. 인터넷 연결을 확인한 뒤 다시 불러와 주세요.', true); showPass(!pass); if (pass) $('auto-reload').hidden = false; return; }
     try {
       const buf = await HSUnlock(box, pass);
       const inv = E.parseInventory(XLSX, XLSX.read(new Uint8Array(buf), { type: 'array' }));
@@ -685,7 +681,7 @@ details.rel li span { font-variant-numeric: tabular-nums; }
       showPass(false); recompute();
     } catch (e) {
       if (e && e.code === 'bad_pass') { store.del(); autoStatus('암호가 맞지 않습니다. 다시 입력해 주세요.', true); showPass(true); }
-      else autoStatus('자동 재고를 여는 중 문제가 생겼습니다. 파일을 직접 선택해 주세요.', true);
+      else { autoStatus('자동 재고를 여는 중 문제가 생겼습니다. 잠시 뒤 다시 불러와 주세요.', true); $('auto-reload').hidden = false; }
     }
   }
   $('auto-go').onclick = () => { const v = $('auto-pass').value; if (!v) { $('auto-pass').focus(); return; } $('auto-pass').value = ''; loadAuto(v, $('auto-remember').checked); };
@@ -703,7 +699,6 @@ details.rel li span { font-variant-numeric: tabular-nums; }
     d.addEventListener('drop', (e) => { e.preventDefault(); d.classList.remove('over'); const f = e.dataTransfer.files[0]; if (f) fn(f); });
   }
   wire('drop-spec', 'spec-file', loadSpec);
-  wire('drop-inv', 'inv-file', loadInv);
   $('spec-sheet').addEventListener('change', (e) => { state.specCand = +e.target.value; renderSpecMeta(); recompute(); });
   $('show-unused').addEventListener('change', render);
 
