@@ -166,7 +166,7 @@ details.rel li span { font-variant-numeric: tabular-nums; }
       <div class="tag" aria-hidden="true">재고</div>
       <div class="body">
         <span class="ttl">재고현황 엑셀</span>
-        <span class="meta">PC 프로그램이 평일 매시간 올리는 최신 재고를 자동으로 불러옵니다.</span>
+        <span class="meta">PC 프로그램이 평일 오전 8시 30분부터 오후 6시까지 30분마다 올리는 최신 재고를 자동으로 불러옵니다.</span>
         <span class="fname" id="inv-fname"></span>
         <span class="meta" id="inv-meta"></span>
         <span class="warn" id="inv-warn" hidden></span>
@@ -196,7 +196,7 @@ details.rel li span { font-variant-numeric: tabular-nums; }
 
   <div class="table" id="table" role="table" aria-label="품목별 재고 대조"></div>
   <p class="note">같은 모델이 여러 항목에 있으면 수량을 합쳐 한 줄로 봅니다. 모델이 A+B처럼 구성품으로 적혀 있으면 구성품마다 따로 봅니다. 체크한 재고 품목만 가용 수량에 들어가고, 표기가 비슷한 품목은 직접 확인한 뒤 체크해 주세요.</p>
-  <p class="note muted" style="margin:0">주식회사 핸썬 Hanson Inc. · Version 12 · 넣은 파일은 이 기기 안에서만 읽고 어디에도 보내지 않습니다.</p>
+  <p class="note muted" style="margin:0">주식회사 핸썬 Hanson Inc. · Version 13 · 넣은 파일은 이 기기 안에서만 읽고 어디에도 보내지 않습니다.</p>
 </div>
 <div class="toast" id="toast" hidden></div>
 <script>if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));</script>
