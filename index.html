@@ -1,0 +1,649 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>스펙북 재고 대조</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<meta name="description" content="하드웨어 스펙북과 이카운트 재고현황 엑셀을 대조해 품목별 재고 판정을 보여 줍니다.">
+<meta name="theme-color" content="#1f7fbf">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="재고 대조">
+<style>
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0}
+[hidden]{display:none!important}
+img{max-width:100%}
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+/* Layout: 작업대 — 위에 파일 두 칸, 그 아래 판정 요약 칩, 본문은 품목별 대조 표 (좁으면 카드) */
+:root {
+  --paper: #f7f9fb; --panel: #ffffff; --ink: #1d2329; --ink-2: #56606b; --line: #dde3ea; --line-2: #eef2f6;
+  --sky: #1f7fbf; --sky-soft: #e5f1fa; --sky-ink: #0f5a8c;
+  --ok: #1d7a4a; --ok-bg: #e3f4ea; --part: #8a5a00; --part-bg: #fdf1cf; --chk: #5b4bb5; --chk-bg: #ece9fb; --ord: #b4232c; --ord-bg: #fbe5e6;
+  --mute-bg: #f0f2f5;
+  --f-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+  --r: 8px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --paper: #12161a; --panel: #1a2026; --ink: #e6ebf0; --ink-2: #9aa6b2; --line: #2c343c; --line-2: #222a31;
+  --sky: #5fb2e8; --sky-soft: #173246; --sky-ink: #9fd3f5;
+  --ok: #6fd39c; --ok-bg: #173327; --part: #f2c25a; --part-bg: #3a2f12; --chk: #b3a8f5; --chk-bg: #2a2546; --ord: #f08a90; --ord-bg: #3d1c1f;
+  --mute-bg: #222a31; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --paper: #12161a; --panel: #1a2026; --ink: #e6ebf0; --ink-2: #9aa6b2; --line: #2c343c; --line-2: #222a31;
+  --sky: #5fb2e8; --sky-soft: #173246; --sky-ink: #9fd3f5;
+  --ok: #6fd39c; --ok-bg: #173327; --part: #f2c25a; --part-bg: #3a2f12; --chk: #b3a8f5; --chk-bg: #2a2546; --ord: #f08a90; --ord-bg: #3d1c1f;
+  --mute-bg: #222a31; color-scheme: dark; }
+
+body { background: var(--paper); color: var(--ink); font-family: var(--f-body); font-size: 14px; line-height: 1.5; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-block: 28px 56px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 20px; }
+h1 { font-size: 22px; font-weight: 600; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+.lede { margin: 4px 0 0; color: var(--ink-2); max-width: 70ch; }
+.mono { font-family: var(--f-mono); font-size: 12.5px; }
+.muted { color: var(--ink-2); }
+
+.inputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 12px; }
+.drop { position: relative; background: var(--panel); border: 1.5px dashed var(--line); border-radius: var(--r); padding: 14px 16px; display: flex; gap: 14px; align-items: flex-start; min-width: 0; transition: border-color .15s, background .15s; }
+.drop.over { border-color: var(--sky); background: var(--sky-soft); }
+.drop.loaded { border-style: solid; }
+.drop .tag { flex: none; width: 38px; height: 38px; border-radius: 8px; background: var(--sky-soft); color: var(--sky-ink); display: grid; place-items: center; font-weight: 600; font-size: 13px; }
+.drop .body { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.drop .ttl { font-weight: 600; }
+.drop .fname { font-family: var(--f-mono); font-size: 12.5px; color: var(--ink-2); overflow-wrap: anywhere; }
+.drop .meta { font-size: 13px; color: var(--ink-2); }
+.drop .warn { font-size: 13px; color: var(--part); }
+.drop .err { font-size: 13px; color: var(--ord); }
+.drop label.btn { margin-top: 6px; align-self: flex-start; }
+.drop input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.drop select { margin-top: 6px; max-width: 100%; font: inherit; font-size: 13px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); }
+
+.btn { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 13px; font-weight: 500; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
+.btn:hover { border-color: var(--sky); }
+.btn.primary { background: var(--sky); border-color: var(--sky); color: #fff; }
+:root[data-theme="dark"] .btn.primary { color: #0b1620; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .btn.primary { color: #0b1620; } }
+.btn:focus-visible, .chip:focus-visible, summary:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+.btn[disabled] { opacity: .5; cursor: default; }
+
+.banner { background: var(--sky-soft); color: var(--sky-ink); border-radius: var(--r); padding: 10px 14px; font-size: 13px; }
+.banner b { font-weight: 600; }
+
+.bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { font: inherit; font-size: 13px; display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
+.chip .n { font-variant-numeric: tabular-nums; font-weight: 600; }
+.chip .dot { width: 8px; height: 8px; border-radius: 50%; }
+.chip[aria-pressed="true"] { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.toggle { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--ink-2); }
+.note { font-size: 13px; color: var(--ink-2); }
+
+.k-ok { --c: var(--ok); --cb: var(--ok-bg); } .k-partial { --c: var(--part); --cb: var(--part-bg); }
+.k-check { --c: var(--chk); --cb: var(--chk-bg); } .k-order { --c: var(--ord); --cb: var(--ord-bg); } .k-unused { --c: var(--ink-2); --cb: var(--mute-bg); }
+.chip .dot { background: var(--c); }
+.pill { display: inline-block; white-space: nowrap; font-size: 12.5px; font-weight: 600; padding: 2px 10px; border-radius: 999px; color: var(--c); background: var(--cb); }
+
+.table { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.row { display: grid; grid-template-columns: 76px minmax(0, 1.25fr) 74px 74px 104px minmax(0, 2.4fr); gap: 0 14px; padding: 12px 16px; border-top: 1px solid var(--line-2); align-items: start; }
+.row.head { border-top: 0; background: var(--mute-bg); font-size: 12px; font-weight: 600; color: var(--ink-2); letter-spacing: .02em; padding-block: 8px; }
+.row.k-order, .row.k-partial, .row.k-check, .row.k-ok { box-shadow: inset 3px 0 0 var(--c); }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+.code { font-family: var(--f-mono); font-size: 12.5px; font-weight: 500; }
+.nm { font-weight: 500; overflow-wrap: anywhere; }
+.model { font-family: var(--f-mono); font-size: 12.5px; color: var(--ink-2); overflow-wrap: anywhere; }
+.part { font-size: 12px; color: var(--ink-2); }
+.short { display: block; font-size: 12px; color: var(--ord); margin-top: 2px; }
+.lbl { display: none; }
+
+.stock { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.cand { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 8px; align-items: start; font-size: 13px; }
+.cand input { margin: 3px 0 0; }
+.cand .t { min-width: 0; overflow-wrap: anywhere; }
+.cand .s { grid-column: 2; font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.cand .why { color: var(--chk); }
+.cand .memo { grid-column: 2; font-size: 12px; color: var(--part); }
+.warnline { font-size: 12px; color: var(--part); }
+.none { font-size: 13px; color: var(--ink-2); }
+details.rel { font-size: 12.5px; }
+details.rel summary { cursor: pointer; color: var(--sky-ink); }
+details.rel ul { margin: 6px 0 0; padding-left: 18px; color: var(--ink-2); display: flex; flex-direction: column; gap: 3px; }
+details.rel li span { font-variant-numeric: tabular-nums; }
+
+.empty { padding: 28px 16px; text-align: center; color: var(--ink-2); }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--paper); padding: 8px 14px; border-radius: 8px; font-size: 13px; }
+
+@media (max-width: 820px) {
+  .row.head { display: none; }
+  .row { grid-template-columns: 1fr auto; gap: 6px 12px; }
+  .row > .c-code { grid-column: 1; } .row > .c-judge { grid-column: 2; grid-row: 1; justify-self: end; }
+  .row > .c-name, .row > .c-stock { grid-column: 1 / -1; }
+  .row > .c-need, .row > .c-avail { grid-column: auto; text-align: left; }
+  .lbl { display: inline; color: var(--ink-2); font-size: 12px; margin-right: 6px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+  <header>
+    <h1>스펙북 재고 대조</h1>
+    <p class="lede">하드웨어 스펙북과 이카운트 재고현황 엑셀을 넣으면, 스펙 품목마다 핸썬 재고가 충분한지 바로 보여 줍니다. 가용 수량은 반입재와 상용재고만 더하고, 반재는 참고로만 표시합니다.</p>
+  </header>
+
+  <section class="inputs" aria-label="파일 넣기">
+    <div class="drop" id="drop-spec">
+      <div class="tag" aria-hidden="true">스펙</div>
+      <div class="body">
+        <span class="ttl">스펙북 엑셀</span>
+        <span class="meta">엄지하우스·두양건축·서울파이낸스센터 양식, 또는 모델·수량 열이 있는 목록</span>
+        <span class="fname" id="spec-fname"></span>
+        <span class="meta" id="spec-meta"></span>
+        <span class="err" id="spec-err" hidden></span>
+        <select id="spec-sheet" aria-label="수량을 읽을 시트" hidden></select>
+        <label class="btn" for="spec-file">파일 선택</label>
+        <input type="file" id="spec-file" accept=".xlsx,.xlsm,.xls">
+      </div>
+    </div>
+    <div class="drop" id="drop-inv">
+      <div class="tag" aria-hidden="true">재고</div>
+      <div class="body">
+        <span class="ttl">재고현황 엑셀</span>
+        <span class="meta">이카운트 재고현황 내보내기 (그날 날짜 파일)</span>
+        <span class="fname" id="inv-fname"></span>
+        <span class="meta" id="inv-meta"></span>
+        <span class="warn" id="inv-warn" hidden></span>
+        <span class="err" id="inv-err" hidden></span>
+        <label class="btn" for="inv-file">파일 선택</label>
+        <input type="file" id="inv-file" accept=".xlsx,.xlsm,.xls">
+      </div>
+    </div>
+  </section>
+
+  <div class="bar">
+    <div class="chips" id="chips" role="group" aria-label="판정별 보기"></div>
+    <div class="tools">
+      <label class="toggle"><input type="checkbox" id="show-unused"> 미사용 품목도 보기</label>
+      <button class="btn" id="copy-btn" type="button">표 복사</button>
+      <button class="btn primary" id="save-btn" type="button">엑셀로 저장</button>
+    </div>
+  </div>
+
+  <div class="table" id="table" role="table" aria-label="품목별 재고 대조"></div>
+  <p class="note">같은 모델이 여러 항목에 있으면 수량을 합쳐 한 줄로 봅니다. 모델이 A+B처럼 구성품으로 적혀 있으면 구성품마다 따로 봅니다. 체크한 재고 품목만 가용 수량에 들어가고, 표기가 비슷한 품목은 직접 확인한 뒤 체크해 주세요.</p>
+  <p class="note muted" style="margin:0">핸썬 기술영업팀 · 버전 2026.10.27 · 넣은 파일은 이 기기 안에서만 읽고 어디에도 보내지 않습니다.</p>
+</div>
+<div class="toast" id="toast" hidden></div>
+<script>if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));</script>
+
+<script src="xlsx.full.min.js"></script>
+<script>
+/* 스펙북 ↔ 재고현황 대조 엔진 (브라우저·node 공용). XLSX(SheetJS) 전역 또는 인자로 받음 */
+(function (root) {
+  'use strict';
+
+  const rowsOf = (XLSX, ws) => XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true, blankrows: true });
+  const txt = (v) => (v == null ? '' : String(v).replace(/\s+/g, ' ').trim());
+  const isNum = (v) => typeof v === 'number' && isFinite(v);
+  const toNum = (v) => { if (isNum(v)) return v; const s = txt(v).replace(/,/g, ''); return s !== '' && !isNaN(+s) ? +s : null; };
+  const norm = (s) => txt(s).toUpperCase().replace(/[\s\-_.·'"`’()\[\]]/g, '');
+  const HW_RE = /^HW\s?\d{1,3}[A-Z]?$/i;
+
+  /* ---------------- 스펙북 ---------------- */
+
+  function projectName(XLSX, wb) {
+    for (const name of wb.SheetNames) {
+      const rows = rowsOf(XLSX, wb.Sheets[name]).slice(0, 12);
+      for (const r of rows) for (const c of r) {
+        const m = txt(c).match(/^PRJ\s*NAME\s*:\s*(.+)$/i);
+        if (m) return m[1].trim();
+      }
+    }
+    if (wb.Sheets['COVER']) { const v = txt((wb.Sheets['COVER']['B5'] || {}).v); if (v) return v; }
+    if (wb.Sheets['ITEM LIST']) { const v = txt((wb.Sheets['ITEM LIST']['A2'] || {}).v); if (v) return v; }
+    return '';
+  }
+
+  // 가로형 배정표 (엄지하우스 4-0.door list): 한 행에 HW 코드가 나열됨
+  function parseHorizontal(XLSX, wb, name) {
+    const rows = rowsOf(XLSX, wb.Sheets[name]);
+    let cr = -1;
+    for (let i = 0; i < Math.min(rows.length, 15); i++) {
+      if ((rows[i] || []).filter((c) => HW_RE.test(txt(c))).length >= 3) { cr = i; break; }
+    }
+    if (cr < 0) return null;
+    // 도어 표 머리글 행 (DOOR NO / LOCATION) = 합계 행
+    let tr = -1;
+    for (let i = cr + 1; i < Math.min(rows.length, cr + 20); i++) {
+      const left = (rows[i] || []).slice(0, 12).map(txt).join(' ');
+      if (/DOOR\s*NO|LOCATION|H\/W\s*SET/i.test(left)) { tr = i; break; }
+    }
+    if (tr < 0) return null;
+    const items = [];
+    (rows[cr] || []).forEach((c, j) => {
+      const code = txt(c);
+      if (!HW_RE.test(code)) return;
+      const between = [];
+      for (let i = cr + 1; i < tr; i++) { const v = (rows[i] || [])[j]; if (txt(v)) between.push(v); }
+      const nameV = between.length > 1 ? between[0] : '';
+      const modelV = between.length ? between[between.length - 1] : '';
+      items.push({ code, name: txt(nameV), model: txt(modelV), unit: '', qty: toNum((rows[tr] || [])[j]) || 0 });
+    });
+    return items.length ? { sheet: name, kind: '가로형 배정표 (HW 코드가 한 행에 나열)', items } : null;
+  }
+
+  // 세로형 목록 (수량 시트, ITEM LIST 등): 머리글에 모델·수량 열이 있음
+  function parseVertical(XLSX, wb, name) {
+    const rows = rowsOf(XLSX, wb.Sheets[name]);
+    for (let h = 0; h < Math.min(rows.length, 15); h++) {
+      const hdr = (rows[h] || []).map(txt);
+      const find = (re) => hdr.findIndex((s) => re.test(s));
+      const mc = find(/^(MODEL|모델)/i);
+      const qc = find(/(TOTAL\s*Q|Q['`’]?\s*TY|^수량$|^총\s*수량|^TOTAL$)/i);
+      if (mc < 0 || qc < 0) continue;
+      let cc = find(/^(NO\.?|CODE|ITEM\s*NO\.?|품번|코드)$/i); if (cc < 0) cc = 0;
+      const nc = find(/(DESCR|품명|제품명|^ITEM$|DESCRIPTION)/i);
+      const uc = find(/^(UNIT|단위)$/i);
+      const items = []; let blanks = 0;
+      for (let i = h + 1; i < rows.length; i++) {
+        const r = rows[i] || [];
+        const code = txt(r[cc]), model = txt(r[mc]), qty = toNum(r[qc]);
+        if (!code && !model) { if (++blanks > 3) break; continue; }
+        blanks = 0;
+        if (/^(TOTAL|합계|계)$/i.test(code) || /^(TOTAL|합계)$/i.test(txt(r[nc]))) continue;
+        if (!model && qty == null) continue;
+        items.push({ code, name: nc >= 0 ? txt(r[nc]) : '', model, unit: uc >= 0 ? txt(r[uc]) : '', qty: qty || 0 });
+      }
+      if (items.length) return { sheet: name, kind: '세로형 품목 목록 (모델·수량 열)', items };
+    }
+    return null;
+  }
+
+  function parseSpecBook(XLSX, wb) {
+    const names = wb.SheetNames;
+    const prio = (n) => /ITEM\s*LIST/i.test(n) ? 0 : /^\s*수량\s*$/.test(n) ? 1 : /door\s*list/i.test(n) ? 2 : /수량|QUANT/i.test(n) ? 3 : 9;
+    const order = names.slice().sort((a, b) => prio(a) - prio(b));
+    const candidates = [];
+    for (const n of order) {
+      let r = null;
+      try { r = /door\s*list|IRON/i.test(n) ? (parseHorizontal(XLSX, wb, n) || parseVertical(XLSX, wb, n)) : (parseVertical(XLSX, wb, n) || parseHorizontal(XLSX, wb, n)); } catch (e) { r = null; }
+      if (r && r.items.some((it) => it.qty > 0)) candidates.push(r);
+    }
+    return { project: projectName(XLSX, wb), candidates };
+  }
+
+  /* ---------------- 재고현황 ---------------- */
+
+  function parseInventory(XLSX, wb) {
+    const name = wb.SheetNames.find((n) => /재고/.test(n)) || wb.SheetNames[0];
+    const rows = rowsOf(XLSX, wb.Sheets[name]);
+    let date = '';
+    for (const r of rows.slice(0, 3)) for (const c of r || []) { const m = txt(c).match(/(\d{4})-(\d{2})-(\d{2})/); if (m && !date) date = m[0]; }
+    let h = -1;
+    for (let i = 0; i < Math.min(rows.length, 10); i++) { const s = (rows[i] || []).map(txt); if (s.includes('품목코드') && s.some((x) => /규격/.test(x))) { h = i; break; } }
+    if (h < 0) throw new Error('재고현황 머리글(품목코드·규격)을 찾지 못했습니다.');
+    const hdr = rows[h].map(txt);
+    const col = (re) => hdr.findIndex((s) => re.test(s));
+    const C = { code: col(/^품목코드$/), rack: col(/^랙$/), memo: col(/^적요$/), full: col(/품목명\s*\[규격\]/), item: col(/^품목명$/), spec: col(/^규격$/),
+      inQ: col(/^반입재$/), defQ: col(/^반재$/), regQ: col(/^상용재고$/), qty: col(/^재고수량$/), cost: col(/^입고단가$/) };
+    const items = [];
+    for (let i = h + 1; i < rows.length; i++) {
+      const r = rows[i] || []; const code = txt(r[C.code]);
+      if (!code || /합계/.test(code) || /^\d{4}-\d{2}-\d{2}/.test(code)) continue;
+      const g = (k) => (C[k] >= 0 ? r[C[k]] : null);
+      const memoRaw = g('memo') == null ? '' : String(g('memo'));
+      const spec = txt(g('spec')); const full = txt(g('full'));
+      const it = { code, rack: txt(g('rack')), supplier: txt(memoRaw.split('\n')[0]), memo: memoRaw.split('\n').slice(1).map(txt).filter(Boolean).join(' / '),
+        item: txt(g('item')), spec, full: full || (txt(g('item')) + (spec ? ' [' + spec + ']' : '')),
+        inQ: toNum(g('inQ')) || 0, defQ: toNum(g('defQ')) || 0, regQ: toNum(g('regQ')) || 0, qty: toNum(g('qty')) || 0, cost: toNum(g('cost')) };
+      if (/:/.test(it.supplier) && !it.memo) { it.memo = it.supplier; }
+      it.avail = it.inQ + it.regQ;
+      const src = spec || full;
+      const seq = src.split(/[\s\[\](),\/+]+/).map(norm).filter((t) => t.length >= 1);
+      const joined = [];
+      for (let a = 0; a < seq.length; a++) for (let b = a + 2; b <= Math.min(seq.length, a + 3); b++) joined.push(seq.slice(a, b).join(''));
+      it.tokens = Array.from(new Set(seq.filter((t) => t.length >= 2)));
+      it.joined = Array.from(new Set(joined));
+      it.nfull = norm(it.full);
+      items.push(it);
+    }
+    return { sheet: name, date, items };
+  }
+
+  /* ---------------- 대조 ---------------- */
+
+  const CATEGORIES = [
+    ['BUTT HINGE', /BUTT\s*HINGE|^HINGES?\b|\bHINGES?\s*\[SGH/i],
+    ['PIVOT', /PIVOT/i], ['PIN HINGE', /PIN\s*HINGE/i], ['CONCEALED HINGE', /CONCEALED\s*HINGE|3D\s*ADJ/i],
+    ['CONTINUOUS HINGE', /CONTINUOUS\s*HINGE/i], ['AUTO POWER HINGE', /POWER\s*HINGE/i],
+    ['FLOOR HINGE', /FLOOR\s*(HINGE|SPRING)/i], ['DOOR CLOSER', /CLOSER/i], ['COORDINATOR', /COORDINATOR/i],
+    ['PANIC', /PANIC|EXIT\s*DEVICE/i], ['OUT-TRIM', /OUT.?TRIM/i], ['DEAD LOCK', /DEAD\s*LOCK|DEADBOLT|DEAD\s*BOLT/i],
+    ['MORTISE LOCK', /MORTISE|LOCK\s*BODY|\bLOCK\b/i], ['CYLINDER', /CYLINDER|THUMB\s*TURN/i], ['LEVER', /LEVER/i],
+    ['PUSH PULL PLATE', /PUSH|PULL\s*PLATE/i], ['PULL HANDLE', /PULL\s*HANDLE|DOOR\s*PULL/i], ['CUP HANDLE', /CUP|컵/i],
+    ['FLUSH BOLT', /FLUSH\s*BOLT/i], ['DUST PROOF', /DUST|먼지/i], ['DOOR STOP', /STOP(PER)?\b|STOPPER/i],
+    ['DOOR GUARD', /GUARD/i], ['VIEWER', /VIEWER/i], ['DIGITAL LOCK', /DIGITAL|DOOR\s*LOCK/i], ['SLIDING', /SLIDING/i],
+    ['PATCH', /PATCH/i], ['AUTO DOOR', /AUTO(MATIC)?\s*(SLIDING\s*)?DOOR/i],
+  ];
+  const categoryOf = (s) => { for (const [k, re] of CATEGORIES) if (re.test(s)) return k; return null; };
+
+  // 스펙 모델 문자열 → 대안(/ ,) × 구성품(+)
+  function splitModel(model) {
+    const alts = String(model).split(/\s*[\/,]\s*/).map(txt).filter(Boolean);
+    return alts.map((a) => a.split(/\s*\+\s*/).map(txt).filter(Boolean));
+  }
+  function keysOf(part) {
+    const strong = [norm(part)].filter((k) => k.length >= 2);
+    const weak = part.split(/\s+/).map(norm).filter((k) => k.length >= 3 && /\d/.test(k) && !strong.includes(k));
+    return { strong, weak };
+  }
+  const commonPrefix = (a, b) => { let i = 0; while (i < a.length && i < b.length && a[i] === b[i]) i++; return i; };
+
+  function matchPart(part, inv) {
+    const { strong, weak } = keysOf(part);
+    const out = [];
+    for (const it of inv.items) {
+      let level = null, why = '';
+      for (const k of strong) {
+        if (it.tokens.includes(k)) { level = 'exact'; why = '모델 일치'; break; }
+        if (k.length >= 5 && it.joined.includes(k)) { level = 'exact'; why = '모델 일치 (띄어쓰기 차이)'; break; }
+        if (k.length >= 5 && it.tokens.some((t) => t.startsWith(k) && /^[A-Z]{0,3}$|^\d{0,1}[A-Z]{0,2}$/.test(t.slice(k.length)))) { level = 'exact'; why = '모델 일치 (접미 표기 차이)'; break; }
+      }
+      if (!level) {
+        for (const k of strong) {
+          if (k.length < 5) continue;
+          const t2 = it.tokens.find((t) => t.length >= 5 && (k.endsWith(t) || t.endsWith(k)));
+          if (t2) { level = 'similar'; why = `표기 비슷함 (${t2})`; break; }
+          const t3 = it.tokens.find((t) => t.length >= 6 && commonPrefix(t, k) >= Math.max(7, k.length - 3) && t !== k);
+          if (t3) { level = 'similar'; why = `마감·끝자리 다름 (${t3})`; break; }
+        }
+      }
+      if (!level) for (const k of weak) {
+        if (k.length >= 6 && it.tokens.includes(k)) { level = 'exact'; why = '모델 일치'; break; }
+        if (it.tokens.includes(k) || (k.length >= 5 && it.tokens.some((t) => t.startsWith(k)))) { level = 'similar'; why = '모델 일부 일치'; break; }
+      }
+      if (level) out.push({ it, level, why });
+    }
+    return out;
+  }
+
+  function reconcile(specItems, inv) {
+    // 같은 모델은 하나로 합산
+    const groups = new Map();
+    for (const s of specItems) {
+      const key = norm(s.model) || ('#' + s.code);
+      const g = groups.get(key);
+      if (g) { g.codes.push(s.code); g.qty += s.qty; if (!g.name && s.name) g.name = s.name; }
+      else groups.set(key, { codes: [s.code], name: s.name, model: s.model, unit: s.unit, qty: s.qty });
+    }
+    const lines = [];
+    for (const g of groups.values()) {
+      const alts = splitModel(g.model || '');
+      const comps = alts.length === 1 && alts[0].length > 1 ? alts[0] : null; // A+B+C → 구성품마다 따로
+      const parts = comps ? comps.map((p, i) => ({ label: `${i + 1}/${comps.length}`, alts: [p] })) : [{ label: '', alts: alts.map((a) => a.join(' ')) }];
+      for (const p of parts) {
+        const seen = new Map();
+        for (const a of p.alts) for (const m of matchPart(a, inv)) {
+          const prev = seen.get(m.it.code);
+          if (!prev || (prev.level === 'similar' && m.level === 'exact')) seen.set(m.it.code, m);
+        }
+        const matches = [...seen.values()].sort((a, b) => (a.level === b.level ? b.it.avail - a.it.avail : a.level === 'exact' ? -1 : 1));
+        const cat = categoryOf(g.name) || categoryOf(g.model);
+        const catRe = cat ? CATEGORIES.find((c) => c[0] === cat)[1] : null;
+        const related = catRe ? inv.items.filter((it) => !seen.has(it.code) && it.avail > 0 && catRe.test(it.item + ' ' + it.full)).sort((a, b) => b.avail - a.avail) : [];
+        lines.push({ codes: g.codes, name: g.name, model: p.alts.join(' / '), fullModel: g.model, part: p.label, unit: g.unit, qty: g.qty,
+          matches, related, category: cat });
+      }
+    }
+    return lines;
+  }
+
+  function judge(line, picked) {
+    if (!(line.qty > 0)) return { key: 'unused', label: '미사용', avail: 0, short: 0 };
+    const sel = line.matches.filter((m) => picked.has(m.it.code));
+    const avail = sel.reduce((s, m) => s + m.it.avail, 0);
+    const def = sel.reduce((s, m) => s + m.it.defQ, 0);
+    const short = Math.max(0, line.qty - avail);
+    const multi = sel.length > 1;
+    if (sel.length && avail >= line.qty) return { key: 'ok', label: '재고 충분', avail, short, def, multi };
+    if (sel.length && avail > 0) return { key: 'partial', label: '일부 부족', avail, short, def, multi };
+    if (line.matches.length) return { key: 'check', label: '확인 필요', avail, short, def };
+    return { key: 'order', label: '발주 필요', avail, short, def };
+  }
+  // 일치 품목이 여러 개면, 재고가 가장 많은 품목과 품목명이 같은 것만 기본 선택 (좌우·색상 변형은 함께, 다른 제품은 제외)
+  const defaultPicks = (line) => {
+    const ex = line.matches.filter((m) => m.level === 'exact');
+    if (!ex.length) return new Set();
+    const lead = norm(ex[0].it.item);
+    return new Set(ex.filter((m) => norm(m.it.item) === lead).map((m) => m.it.code));
+  };
+  const salePrice = (cost) => (cost == null ? null : Math.round(cost / 0.6 / 100) * 100);
+
+  const api = { parseSpecBook, parseInventory, reconcile, judge, defaultPicks, salePrice, norm };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.HSRecon = api;
+})(typeof window !== 'undefined' ? window : globalThis);
+
+</script>
+<script>
+(() => {
+  const E = window.HSRecon;
+  const SAMPLE = null;
+  const $ = (id) => document.getElementById(id);
+  const fmt = (n) => (n == null ? '–' : Number(n).toLocaleString('ko-KR'));
+  const STATUS = [['ok', '재고 충분'], ['partial', '일부 부족'], ['check', '확인 필요'], ['order', '발주 필요']];
+
+  const state = { spec: null, specFile: '', specCand: 0, inv: null, invFile: '', lines: [], picks: new Map(), filter: null, sample: false };
+
+  /* ---------- 파일 읽기 ---------- */
+  const readWb = (file) => file.arrayBuffer().then((buf) => XLSX.read(buf, { type: 'array', cellFormula: false, cellHTML: false, cellStyles: false }));
+  const today = () => { const d = new Date(); const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; };
+
+  async function loadSpec(file) {
+    $('spec-err').hidden = true; $('spec-fname').textContent = file.name; $('spec-meta').textContent = '읽는 중…';
+    try {
+      const sb = E.parseSpecBook(XLSX, await readWb(file));
+      if (!sb.candidates.length) throw new Error('수량이 들어 있는 품목 목록을 찾지 못했습니다. HW 코드 행이 있는 배정표나, 모델·수량 열이 있는 시트가 필요합니다.');
+      state.spec = sb; state.specFile = file.name; state.specCand = 0; leaveSample();
+      $('drop-spec').classList.add('loaded'); renderSpecMeta(); recompute();
+    } catch (e) { $('spec-meta').textContent = ''; $('spec-err').textContent = e.message || '파일을 읽지 못했습니다.'; $('spec-err').hidden = false; }
+  }
+  async function loadInv(file) {
+    $('inv-err').hidden = true; $('inv-warn').hidden = true; $('inv-fname').textContent = file.name; $('inv-meta').textContent = '읽는 중…';
+    try {
+      const inv = E.parseInventory(XLSX, await readWb(file));
+      if (!inv.items.length) throw new Error('재고 품목이 없습니다.');
+      state.inv = inv; state.invFile = file.name; leaveSample();
+      $('drop-inv').classList.add('loaded'); renderInvMeta(); recompute();
+    } catch (e) { $('inv-meta').textContent = ''; $('inv-err').textContent = e.message || '파일을 읽지 못했습니다.'; $('inv-err').hidden = false; }
+  }
+  function renderSpecMeta() {
+    const sb = state.spec, c = sb.candidates[state.specCand];
+    const used = c.items.filter((i) => i.qty > 0).length;
+    $('spec-meta').textContent = `${sb.project || '현장명 없음'} · ${c.sheet.trim()} 시트 · 품목 ${c.items.length}개 (사용 ${used}개)`;
+    const sel = $('spec-sheet');
+    sel.hidden = sb.candidates.length < 2;
+    sel.replaceChildren(...sb.candidates.map((cd, i) => { const o = new Option(`${cd.sheet.trim()} — ${cd.kind}`, String(i)); o.selected = i === state.specCand; return o; }));
+  }
+  function renderInvMeta() {
+    const inv = state.inv;
+    $('inv-meta').textContent = `${inv.date || '날짜 없음'} 기준 · 품목 ${inv.items.length}개`;
+    const w = $('inv-warn');
+    if (!state.sample && inv.date && inv.date !== today()) { w.textContent = `오늘(${today()}) 재고가 아닙니다. 재고는 매일 바뀌니 그날 파일로 다시 대조해 주세요.`; w.hidden = false; } else w.hidden = true;
+  }
+  function leaveSample() {
+    if (!state.sample) return;
+    state.sample = false;
+    if (!state.specFile) { state.spec = null; $('spec-meta').textContent = ''; $('spec-fname').textContent = ''; $('spec-sheet').hidden = true; }
+    if (!state.invFile) { state.inv = null; $('inv-meta').textContent = ''; $('inv-fname').textContent = ''; }
+  }
+
+  /* ---------- 계산 ---------- */
+  function recompute() {
+    if (!state.spec || !state.inv) { state.lines = []; render(); return; }
+    state.lines = E.reconcile(state.spec.candidates[state.specCand].items, state.inv);
+    state.picks = new Map(state.lines.map((l, i) => [i, E.defaultPicks(l)]));
+    render();
+  }
+  const judgeAt = (i) => E.judge(state.lines[i], state.picks.get(i));
+
+  /* ---------- 그리기 ---------- */
+  const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+
+  function render() {
+    const tbl = $('table'); tbl.replaceChildren();
+    const ready = state.lines.length > 0;
+    $('copy-btn').disabled = !ready; $('save-btn').disabled = !ready;
+    if (!ready) {
+      const msg = !state.spec && !state.inv ? '스펙북과 재고현황 엑셀을 넣어 주세요.' : !state.spec ? '스펙북 엑셀을 넣어 주세요.' : '재고현황 엑셀을 넣어 주세요.';
+      tbl.append(el('div', 'empty', msg)); $('chips').replaceChildren(); return;
+    }
+    const showUnused = $('show-unused').checked;
+    const judged = state.lines.map((l, i) => ({ l, i, j: judgeAt(i) }));
+    // 칩
+    const counts = Object.fromEntries(STATUS.map(([k]) => [k, 0]));
+    judged.forEach(({ j }) => { if (counts[j.key] != null) counts[j.key]++; });
+    const chips = $('chips'); chips.replaceChildren();
+    const allBtn = el('button', 'chip'); allBtn.type = 'button';
+    allBtn.append(el('span', null, '전체'), el('span', 'n', String(judged.filter((x) => x.j.key !== 'unused').length)));
+    allBtn.setAttribute('aria-pressed', String(state.filter == null));
+    allBtn.onclick = () => { state.filter = null; render(); };
+    chips.append(allBtn);
+    STATUS.forEach(([k, label]) => {
+      const b = el('button', 'chip k-' + k); b.type = 'button';
+      b.append(el('span', 'dot'), el('span', null, label), el('span', 'n', String(counts[k])));
+      b.setAttribute('aria-pressed', String(state.filter === k));
+      b.onclick = () => { state.filter = state.filter === k ? null : k; render(); };
+      chips.append(b);
+    });
+    // 머리글
+    const head = el('div', 'row head'); head.setAttribute('role', 'row');
+    ['코드', '품명 · 스펙 모델', '필요', '가용', '판정', '핸썬 재고 (체크한 품목만 가용에 포함)'].forEach((t, k) => { const c = el('div', k === 2 || k === 3 ? 'num' : '', t); c.setAttribute('role', 'columnheader'); head.append(c); });
+    tbl.append(head);
+    const rows = judged.filter(({ j }) => (showUnused || j.key !== 'unused') && (state.filter == null || j.key === state.filter));
+    if (!rows.length) { tbl.append(el('div', 'empty', '이 판정에 해당하는 품목이 없습니다.')); return; }
+    rows.forEach(({ l, i, j }) => tbl.append(renderRow(l, i, j)));
+  }
+
+  function renderRow(l, i, j) {
+    const r = el('div', 'row k-' + j.key); r.setAttribute('role', 'row');
+    const cCode = el('div', 'c-code code', l.codes.join(', '));
+    const cName = el('div', 'c-name');
+    cName.append(el('div', 'nm', l.name || '(품명 없음)'), el('div', 'model', l.model || '(모델 없음)'));
+    if (l.part) cName.append(el('div', 'part', `구성품 ${l.part} · 전체 모델 ${l.fullModel}`));
+    const cNeed = el('div', 'c-need num'); cNeed.append(el('span', 'lbl', '필요'), document.createTextNode(fmt(l.qty) + (l.unit ? ' ' + l.unit : '')));
+    const cAvail = el('div', 'c-avail num'); cAvail.append(el('span', 'lbl', '가용'), document.createTextNode(j.key === 'unused' ? '–' : fmt(j.avail)));
+    if (j.short > 0 && j.avail > 0) cAvail.append(el('span', 'short', `${fmt(j.short)} 부족`));
+    const cJudge = el('div', 'c-judge'); cJudge.append(el('span', 'pill', j.label));
+    const cStock = el('div', 'c-stock stock');
+    if (!l.matches.length) cStock.append(el('div', 'none', '모델이 맞는 재고가 없습니다.'));
+    const picked = state.picks.get(i);
+    l.matches.forEach((m) => {
+      const it = m.it, id = `pk-${i}-${it.code}`;
+      const box = el('div', 'cand');
+      const cb = el('input'); cb.type = 'checkbox'; cb.id = id; cb.checked = picked.has(it.code);
+      cb.onchange = () => { cb.checked ? picked.add(it.code) : picked.delete(it.code); render(); };
+      const t = el('label', 't'); t.htmlFor = id;
+      t.append(el('span', 'code', it.code + ' '), document.createTextNode(it.full));
+      if (m.level !== 'exact') t.append(el('span', 'why', ` · ${m.why}`));
+      const s = el('div', 's', `랙 ${it.rack || '–'} · ${it.supplier || '–'} · 반입 ${fmt(it.inQ)} · 상용 ${fmt(it.regQ)}` + (it.defQ ? ` · 반재 ${fmt(it.defQ)}(보수용)` : '') + (it.cost != null ? ` · 입고단가 ${fmt(it.cost)}원` : ' · 입고단가 없음'));
+      box.append(cb, t, s);
+      if (it.memo) box.append(el('div', 'memo', '메모: ' + it.memo));
+      cStock.append(box);
+    });
+    if (j.multi) cStock.append(el('div', 'warnline', '재고 품목 여러 개를 합쳤습니다. 좌우·마감이 스펙과 같은지 확인해 주세요.'));
+    if (l.related.length && j.key !== 'ok') {
+      const d = el('details', 'rel');
+      d.append(el('summary', null, `같은 분류(${l.category}) 재고 ${l.related.length}건 보기`));
+      const ul = el('ul');
+      l.related.slice(0, 8).forEach((it) => { const li = el('li'); li.append(el('span', 'code', it.code + ' '), document.createTextNode(`${it.full} · 랙 ${it.rack || '–'} · `), el('span', null, `가용 ${fmt(it.avail)}`)); ul.append(li); });
+      if (l.related.length > 8) ul.append(el('li', null, `외 ${l.related.length - 8}건`));
+      d.append(ul); cStock.append(d);
+    }
+    r.append(cCode, cName, cNeed, cAvail, cJudge, cStock);
+    return r;
+  }
+
+  /* ---------- 내보내기 ---------- */
+  function exportRows() {
+    return state.lines.map((l, i) => {
+      const j = judgeAt(i); const sel = l.matches.filter((m) => state.picks.get(i).has(m.it.code)).map((m) => m.it);
+      const cost = sel.length ? sel[0].cost : null;
+      return { '코드': l.codes.join(', '), '품명': l.name, '스펙 모델': l.model, '구성품': l.part, '필요 수량': l.qty, '단위': l.unit, '판정': j.label,
+        '가용 수량(반입+상용)': j.key === 'unused' ? '' : j.avail, '부족 수량': j.short || '', '재고 품목코드': sel.map((x) => x.code).join(', '),
+        '재고 품목명[규격]': sel.map((x) => x.full).join(' / '), '랙': sel.map((x) => x.rack).join(', '),
+        '반입재': sel.reduce((s, x) => s + x.inQ, 0) || '', '상용재고': sel.reduce((s, x) => s + x.regQ, 0) || '', '반재(보수용)': sel.reduce((s, x) => s + x.defQ, 0) || '',
+        '입고단가(매입가)': cost ?? '', '판매가(매입가÷0.6)': E.salePrice(cost) ?? '',
+        '비슷한 재고(확인 필요)': l.matches.filter((m) => !state.picks.get(i).has(m.it.code)).map((m) => `${m.it.code} ${m.it.full} (가용 ${m.it.avail})`).join(' / '),
+        '메모': sel.map((x) => x.memo).filter(Boolean).join(' / ') };
+    });
+  }
+  function fileStem() {
+    const d = new Date(); const ymd = String(d.getFullYear()).slice(2) + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+    const prj = (state.spec && state.spec.project) || state.specFile.replace(/\.[^.]+$/, '') || '현장';
+    return `재고대조_${prj.replace(/[\\/:*?"<>|]/g, '').trim()}_${ymd}`;
+  }
+  $('copy-btn').onclick = async () => {
+    const rows = exportRows(); if (!rows.length) return;
+    const cols = Object.keys(rows[0]);
+    const tsv = [cols.join('\t'), ...rows.map((r) => cols.map((c) => String(r[c] ?? '').replace(/[\t\n]/g, ' ')).join('\t'))].join('\n');
+    try { await navigator.clipboard.writeText(tsv); toast('표를 복사했습니다. 엑셀에 붙여 넣으세요.'); } catch { toast('복사하지 못했습니다. 엑셀로 저장을 이용해 주세요.'); }
+  };
+  $('save-btn').onclick = async () => {
+    if (!state.lines.length) return;
+    const rows = exportRows();
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = Object.keys(rows[0]).map((k) => ({ wch: Math.min(48, Math.max(8, k.length * 2, ...rows.map((r) => String(r[k] ?? '').length))) }));
+    ws['!autofilter'] = { ref: ws['!ref'] }; ws['!freeze'] = { xSplit: 0, ySplit: 1 };
+    const info = XLSX.utils.aoa_to_sheet([
+      ['현장', (state.spec && state.spec.project) || ''], ['스펙북 파일', state.specFile || '(예시)'], ['스펙북 시트', state.spec ? state.spec.candidates[state.specCand].sheet.trim() : ''],
+      ['재고현황 파일', state.invFile || '(예시)'], ['재고 기준일', state.inv ? state.inv.date : ''], ['대조한 날', today()],
+      ['가용 수량', '반입재 + 상용재고 (반재는 보수용으로 제외)'], ['판매가', '입고단가 ÷ 0.6, 100원 단위 반올림']]);
+    info['!cols'] = [{ wch: 14 }, { wch: 60 }];
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '재고 대조'); XLSX.utils.book_append_sheet(wb, info, '기준');
+    const data = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+    const name = fileStem() + '.xlsx';
+    const blob = new Blob([data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    try {
+      const file = new File([blob], name, { type: blob.type });
+      if (navigator.canShare && navigator.canShare({ files: [file] }) && /iPhone|iPad|Android/i.test(navigator.userAgent)) { await navigator.share({ files: [file], title: name }); return; }
+    } catch (e) { if (e && e.name === 'AbortError') return; }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.append(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); toast('저장했습니다.');
+  };
+  let tt = null;
+  function toast(msg) { const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(tt); tt = setTimeout(() => { t.hidden = true; }, 2600); }
+
+  /* ---------- 입력 연결 ---------- */
+  function wire(dropId, inputId, fn) {
+    const d = $(dropId), inp = $(inputId);
+    inp.addEventListener('change', () => { if (inp.files[0]) fn(inp.files[0]); inp.value = ''; });
+    d.addEventListener('dragover', (e) => { e.preventDefault(); d.classList.add('over'); });
+    d.addEventListener('dragleave', () => d.classList.remove('over'));
+    d.addEventListener('drop', (e) => { e.preventDefault(); d.classList.remove('over'); const f = e.dataTransfer.files[0]; if (f) fn(f); });
+  }
+  wire('drop-spec', 'spec-file', loadSpec);
+  wire('drop-inv', 'inv-file', loadInv);
+  $('spec-sheet').addEventListener('change', (e) => { state.specCand = +e.target.value; renderSpecMeta(); recompute(); });
+  $('show-unused').addEventListener('change', render);
+
+  /* ---------- 예시로 시작 ---------- */
+  if (SAMPLE) {
+    state.sample = true;
+    state.spec = SAMPLE.spec; state.inv = SAMPLE.inv;
+    $('spec-fname').textContent = '예시: ' + SAMPLE.specFile; $('inv-fname').textContent = '예시: ' + SAMPLE.invFile;
+    renderSpecMeta(); renderInvMeta();
+    $('inv-meta').textContent = `${SAMPLE.inv.date} 기준 · 예시에 쓰인 품목만 담음`;
+    recompute();
+  } else { render(); }
+})();
+</script>
+
+</body>
+</html>

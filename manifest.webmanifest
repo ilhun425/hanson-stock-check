@@ -1,0 +1,16 @@
+{
+  "name": "스펙북 재고 대조",
+  "short_name": "재고 대조",
+  "description": "하드웨어 스펙북과 이카운트 재고현황 엑셀을 대조해 품목별 재고 판정을 보여 줍니다.",
+  "lang": "ko",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f7f9fb",
+  "theme_color": "#1f7fbf",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
