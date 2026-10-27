@@ -120,6 +120,8 @@ h1 { font-size: 24px; font-weight: 600; margin: 0; letter-spacing: -0.01em; text
 .none { font-size: 15px; color: var(--ink-2); }
 details.rel { font-size: 14.5px; }
 details.rel summary { cursor: pointer; color: var(--sky-ink); }
+details.rel .relnote { margin: 6px 0 4px; color: var(--ink-2); }
+details.rel .rellist { display: flex; flex-direction: column; gap: 6px; max-height: 22rem; overflow-y: auto; padding: 4px 4px 4px 0; }
 details.rel ul { margin: 6px 0 0; padding-left: 18px; color: var(--ink-2); display: flex; flex-direction: column; gap: 3px; }
 details.rel li span { font-variant-numeric: tabular-nums; }
 
@@ -194,7 +196,7 @@ details.rel li span { font-variant-numeric: tabular-nums; }
 
   <div class="table" id="table" role="table" aria-label="품목별 재고 대조"></div>
   <p class="note">같은 모델이 여러 항목에 있으면 수량을 합쳐 한 줄로 봅니다. 모델이 A+B처럼 구성품으로 적혀 있으면 구성품마다 따로 봅니다. 체크한 재고 품목만 가용 수량에 들어가고, 표기가 비슷한 품목은 직접 확인한 뒤 체크해 주세요.</p>
-  <p class="note muted" style="margin:0">주식회사 핸썬 Hanson Inc. · Version 10 · 넣은 파일은 이 기기 안에서만 읽고 어디에도 보내지 않습니다.</p>
+  <p class="note muted" style="margin:0">주식회사 핸썬 Hanson Inc. · Version 11 · 넣은 파일은 이 기기 안에서만 읽고 어디에도 보내지 않습니다.</p>
 </div>
 <div class="toast" id="toast" hidden></div>
 <script>if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));</script>
@@ -409,6 +411,11 @@ details.rel li span { font-variant-numeric: tabular-nums; }
         if (k.length >= 6 && it.tokens.includes(k)) { level = 'exact'; why = '모델 일치'; break; }
         if (it.tokens.includes(k) || (k.length >= 5 && it.tokens.some((t) => t.startsWith(k)))) { level = 'similar'; why = '모델 일부 일치'; break; }
       }
+      if (!level) {
+        // 크로스 체크: 스펙의 모델명이 재고의 품목명 쪽에 적혀 있는 경우 (예: 모델 ACTIVE STOP ↔ 품목명 … ACTIVE STOP …)
+        const whole = norm(part);
+        if (whole.length >= 6 && /[A-Z]{3}/.test(whole) && it.nfull.includes(whole)) { level = 'similar'; why = '재고 품목명에 스펙 모델이 들어 있음'; }
+      }
       if (level) out.push({ it, level, why });
     }
     return out;
@@ -434,6 +441,13 @@ details.rel li span { font-variant-numeric: tabular-nums; }
           const prev = seen.get(m.it.code);
           if (!prev || (prev.level === 'similar' && m.level === 'exact')) seen.set(m.it.code, m);
         }
+        // 크로스 체크: 재고의 모델(규격)이 스펙의 품명 쪽에 적혀 있는 경우
+        const nName = norm(g.name);
+        if (nName.length >= 5) for (const it of inv.items) {
+          if (seen.has(it.code)) continue;
+          const t = it.tokens.find((x) => x.length >= 5 && /\d/.test(x) && /[A-Z]/.test(x) && nName.includes(x));
+          if (t) seen.set(it.code, { it, level: 'similar', why: `스펙 품명에 재고 모델(${t})이 들어 있음` });
+        }
         const matches = [...seen.values()].sort((a, b) => (a.level === b.level ? b.it.avail - a.it.avail : a.level === 'exact' ? -1 : 1));
         const cat = categoryOf(g.name) || categoryOf(g.model);
         const catRe = cat ? CATEGORIES.find((c) => c[0] === cat)[1] : null;
@@ -447,9 +461,10 @@ details.rel li span { font-variant-numeric: tabular-nums; }
 
   function judge(line, picked) {
     if (!(line.qty > 0)) return { key: 'unused', label: '미사용', avail: 0, short: 0 };
-    const sel = line.matches.filter((m) => picked.has(m.it.code));
-    const avail = sel.reduce((s, m) => s + m.it.avail, 0);
-    const def = sel.reduce((s, m) => s + m.it.defQ, 0);
+    // 체크한 재고 = 모델 일치·비슷한 품목 + 같은 분류 목록에서 직접 고른 품목
+    const sel = [...line.matches.map((m) => m.it), ...line.related].filter((it) => picked.has(it.code));
+    const avail = sel.reduce((s, it) => s + it.avail, 0);
+    const def = sel.reduce((s, it) => s + it.defQ, 0);
     const short = Math.max(0, line.qty - avail);
     const multi = sel.length > 1;
     if (sel.length && avail >= line.qty) return { key: 'ok', label: '재고 충분', avail, short, def, multi };
@@ -480,7 +495,7 @@ details.rel li span { font-variant-numeric: tabular-nums; }
   const fmt = (n) => (n == null ? '–' : Number(n).toLocaleString('ko-KR'));
   const STATUS = [['ok', '재고 충분'], ['check', '확인 필요'], ['order', '발주 필요']];
 
-  const state = { spec: null, specFile: '', specCand: 0, inv: null, invFile: '', lines: [], picks: new Map(), filter: null, sample: false };
+  const state = { spec: null, specFile: '', specCand: 0, inv: null, invFile: '', lines: [], picks: new Map(), relOpen: new Set(), filter: null, sample: false };
 
   /* ---------- 파일 읽기 ---------- */
   const readWb = (file) => file.arrayBuffer().then((buf) => XLSX.read(buf, { type: 'array', cellFormula: false, cellHTML: false, cellStyles: false }));
@@ -529,7 +544,7 @@ details.rel li span { font-variant-numeric: tabular-nums; }
   function recompute() {
     if (!state.spec || !state.inv) { state.lines = []; render(); return; }
     state.lines = E.reconcile(state.spec.candidates[state.specCand].items, state.inv);
-    state.picks = new Map(state.lines.map((l, i) => [i, E.defaultPicks(l)]));
+    state.picks = new Map(state.lines.map((l, i) => [i, E.defaultPicks(l)])); state.relOpen = new Set();
     render();
   }
   const judgeAt = (i) => E.judge(state.lines[i], state.picks.get(i));
@@ -598,13 +613,26 @@ details.rel li span { font-variant-numeric: tabular-nums; }
       cStock.append(box);
     });
     if (j.multi) cStock.append(el('div', 'warnline', '재고 품목 여러 개를 합쳤습니다. 좌우·마감이 스펙과 같은지 확인해 주세요.'));
-    if (l.related.length && j.key !== 'ok') {
+    const relPicked = l.related.filter((it) => picked.has(it.code)).length;
+    if (l.related.length && (j.key !== 'ok' || relPicked)) {
       const d = el('details', 'rel');
-      d.append(el('summary', null, `같은 분류(${l.category}) 재고 ${l.related.length}건 보기`));
-      const ul = el('ul');
-      l.related.slice(0, 8).forEach((it) => { const li = el('li'); li.append(el('span', 'code', it.code + ' '), document.createTextNode(`${it.full} · 랙 ${it.rack || '–'} · `), el('span', null, `가용 ${fmt(it.avail)}`)); ul.append(li); });
-      if (l.related.length > 8) ul.append(el('li', null, `외 ${l.related.length - 8}건`));
-      d.append(ul); cStock.append(d);
+      d.open = state.relOpen.has(i) || relPicked > 0;
+      d.addEventListener('toggle', () => { d.open ? state.relOpen.add(i) : state.relOpen.delete(i); });
+      d.append(el('summary', null, `같은 분류(${l.category}) 재고 ${l.related.length}건 보기` + (relPicked ? ` · ${relPicked}개 체크함` : '')));
+      d.append(el('div', 'relnote', '스펙과 같은 제품이면 체크하세요. 체크한 품목의 재고가 가용 수량에 들어갑니다.'));
+      const list = el('div', 'rellist');
+      l.related.forEach((it) => {
+        const id = `rl-${i}-${it.code}`;
+        const box = el('div', 'cand');
+        const cb = el('input'); cb.type = 'checkbox'; cb.id = id; cb.checked = picked.has(it.code);
+        cb.onchange = () => { cb.checked ? picked.add(it.code) : picked.delete(it.code); state.relOpen.add(i); render(); };
+        const t = el('label', 't'); t.htmlFor = id;
+        t.append(el('span', 'code', it.code + ' '), document.createTextNode(it.full));
+        const s = el('div', 's', `랙 ${it.rack || '–'} · ${it.supplier || '–'} · 가용 ${fmt(it.avail)} · `);
+        s.append(it.cost != null ? el('span', 'cost', `입고단가 ${fmt(it.cost)}원`) : document.createTextNode('입고단가 없음'));
+        box.append(cb, t, s); list.append(box);
+      });
+      d.append(list); cStock.append(d);
     }
     r.append(cCode, cName, cNeed, cAvail, cJudge, cStock);
     return r;
@@ -613,7 +641,7 @@ details.rel li span { font-variant-numeric: tabular-nums; }
   /* ---------- 내보내기 ---------- */
   function exportRows() {
     return state.lines.map((l, i) => {
-      const j = judgeAt(i); const sel = l.matches.filter((m) => state.picks.get(i).has(m.it.code)).map((m) => m.it);
+      const j = judgeAt(i); const sel = [...l.matches.map((m) => m.it), ...l.related].filter((it) => state.picks.get(i).has(it.code));
       const cost = sel.length ? sel[0].cost : null;
       return { '코드': l.codes.join(', '), '품명': l.name, '스펙 모델': l.model, '구성품': l.part, '필요 수량': l.qty, '단위': l.unit, '판정': j.label,
         '가용 수량(반입+상용)': j.key === 'unused' ? '' : j.avail, '부족 수량': j.short || '', '재고 품목코드': sel.map((x) => x.code).join(', '),
