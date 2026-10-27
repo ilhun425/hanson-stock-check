@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>스펙북 재고 대조</title>
+<title>재고 확인</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <meta name="description" content="하드웨어 스펙북과 이카운트 재고현황 엑셀을 대조해 품목별 재고 판정을 보여 줍니다.">
@@ -13,7 +13,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="재고 대조">
+<meta name="apple-mobile-web-app-title" content="재고 확인">
 <style>
 *,*::before,*::after{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
@@ -140,8 +140,8 @@ details.rel li span { font-variant-numeric: tabular-nums; }
 
 <div class="wrap">
   <header>
-    <h1>스펙북 재고 대조</h1>
-    <p class="lede">하드웨어 스펙북과 이카운트 재고현황 엑셀을 넣으면, 스펙 품목마다 핸썬 재고가 충분한지 바로 보여 줍니다. 가용 수량은 반입재와 상용재고만 더하고, 반재는 참고로만 표시합니다.</p>
+    <h1>재고 확인</h1>
+    <p class="lede">품목마다 재고가 충분한지 바로 보여 줍니다. 가용 수량은 반입재와 상용재고만 더하고, 반재는 참고로만 표시합니다.</p>
   </header>
 
   <section class="inputs" aria-label="파일 넣기">
@@ -192,7 +192,7 @@ details.rel li span { font-variant-numeric: tabular-nums; }
 
   <div class="table" id="table" role="table" aria-label="품목별 재고 대조"></div>
   <p class="note">같은 모델이 여러 항목에 있으면 수량을 합쳐 한 줄로 봅니다. 모델이 A+B처럼 구성품으로 적혀 있으면 구성품마다 따로 봅니다. 체크한 재고 품목만 가용 수량에 들어가고, 표기가 비슷한 품목은 직접 확인한 뒤 체크해 주세요.</p>
-  <p class="note muted" style="margin:0">핸썬 기술영업팀 · 버전 2026.10.27-6 · 넣은 파일은 이 기기 안에서만 읽고 어디에도 보내지 않습니다.</p>
+  <p class="note muted" style="margin:0">핸썬 기술영업팀 · Version 07 · 넣은 파일은 이 기기 안에서만 읽고 어디에도 보내지 않습니다.</p>
 </div>
 <div class="toast" id="toast" hidden></div>
 <script>if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));</script>
@@ -657,7 +657,12 @@ details.rel li span { font-variant-numeric: tabular-nums; }
   function toast(msg) { const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(tt); tt = setTimeout(() => { t.hidden = true; }, 2600); }
 
   /* ---------- 자동 재고 (PC 프로그램이 매시간 올린 잠긴 파일) ---------- */
-  const AUTO_URLS = ['https://raw.githubusercontent.com/ilhun425/hanson-stock-check/main/data/stock.json', 'data/stock.json'];
+  // 1) GitHub API: 저장해 두지 않고 항상 최신  2) raw 주소 (최대 5분 늦을 수 있음)  3) 앱 주소의 사본
+  const AUTO_SOURCES = [
+    { url: 'https://api.github.com/repos/ilhun425/hanson-stock-check/contents/data/stock.json?ref=main', headers: { Accept: 'application/vnd.github.raw+json' } },
+    { url: 'https://raw.githubusercontent.com/ilhun425/hanson-stock-check/main/data/stock.json', bust: true },
+    { url: 'data/stock.json', bust: true },
+  ];
   const KEY = 'hs-stock-pass';
   const store = { get() { try { return localStorage.getItem(KEY); } catch { return null; } }, set(v) { try { localStorage.setItem(KEY, v); } catch {} }, del() { try { localStorage.removeItem(KEY); } catch {} } };
   let sessionPass = null;
@@ -665,8 +670,8 @@ details.rel li span { font-variant-numeric: tabular-nums; }
   function showPass(show) { $('auto-pass-row').hidden = !show; $('auto-reload').hidden = show; if (show) setTimeout(() => $('auto-pass').focus(), 0); }
   async function fetchBox() {
     let last = null;
-    for (const u of AUTO_URLS) {
-      try { const r = await fetch(u + '?t=' + Date.now(), { cache: 'no-store' }); if (r.ok) return await r.json(); last = new Error('HTTP ' + r.status); } catch (e) { last = e; }
+    for (const u of AUTO_SOURCES) {
+      try { const r = await fetch(u.bust ? u.url + '?t=' + Date.now() : u.url, { cache: 'no-store', headers: u.headers || {} }); if (r.ok) return await r.json(); last = new Error('HTTP ' + r.status); } catch (e) { last = e; }
     }
     throw last || new Error('불러오지 못했습니다.');
   }

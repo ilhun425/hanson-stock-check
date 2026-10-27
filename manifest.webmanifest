@@ -1,7 +1,7 @@
 {
-  "name": "스펙북 재고 대조",
-  "short_name": "재고 대조",
-  "description": "하드웨어 스펙북과 이카운트 재고현황 엑셀을 대조해 품목별 재고 판정을 보여 줍니다.",
+  "name": "재고 확인",
+  "short_name": "재고 확인",
+  "description": "품목마다 핸썬 재고가 충분한지 보여 줍니다.",
   "lang": "ko",
   "start_url": "./",
   "scope": "./",
