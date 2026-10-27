@@ -196,7 +196,7 @@ details.rel li span { font-variant-numeric: tabular-nums; }
 
   <div class="table" id="table" role="table" aria-label="품목별 재고 대조"></div>
   <p class="note">같은 모델이 여러 항목에 있으면 수량을 합쳐 한 줄로 봅니다. 모델이 A+B처럼 구성품으로 적혀 있으면 구성품마다 따로 봅니다. 체크한 재고 품목만 가용 수량에 들어가고, 표기가 비슷한 품목은 직접 확인한 뒤 체크해 주세요.</p>
-  <p class="note muted" style="margin:0">주식회사 핸썬 Hanson Inc. · Version 11 · 넣은 파일은 이 기기 안에서만 읽고 어디에도 보내지 않습니다.</p>
+  <p class="note muted" style="margin:0">주식회사 핸썬 Hanson Inc. · Version 12 · 넣은 파일은 이 기기 안에서만 읽고 어디에도 보내지 않습니다.</p>
 </div>
 <div class="toast" id="toast" hidden></div>
 <script>if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));</script>
@@ -391,7 +391,10 @@ details.rel li span { font-variant-numeric: tabular-nums; }
   function matchPart(part, inv) {
     const { strong, weak } = keysOf(part);
     const out = [];
+    // 헤펠레 8자리 숫자 코드(예: 926.98.110): 숫자가 하나라도 다르면 다른 제품 → 완전히 같을 때만 일치
+    const hafele = strong.length === 1 && /^\d{8}$/.test(strong[0]);
     for (const it of inv.items) {
+      if (hafele) { if (it.tokens.includes(strong[0])) out.push({ it, level: 'exact', why: '모델 일치' }); continue; }
       let level = null, why = '';
       for (const k of strong) {
         if (it.tokens.includes(k)) { level = 'exact'; why = '모델 일치'; break; }
