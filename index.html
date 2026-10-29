@@ -66,6 +66,14 @@ h1 { font-size: 24px; font-weight: 600; margin: 0; letter-spacing: -0.01em; text
 .auto-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .auto-row input[type=password] { font: inherit; font-size: 15px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); min-width: 0; flex: 1 1 140px; }
 .drop label.btn { margin-top: 6px; align-self: flex-start; }
+.dictbar { display: flex; flex-direction: column; gap: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 10px 16px; }
+.dict-st { font-size: 15px; color: var(--sky-ink); overflow-wrap: anywhere; }
+.dict-st.bad { color: var(--ink-2); }
+.dictbar input[type=password] { font: inherit; font-size: 15px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); min-width: 0; flex: 1 1 200px; max-width: 360px; }
+.dictline { font-size: 14px; color: var(--ink-2); overflow-wrap: anywhere; }
+.dictline .code { font-size: 14px; }
+.dictadd { align-self: flex-start; font-size: 14px; padding: 3px 10px; }
+.cand .dict { color: var(--ok); font-weight: 600; }
 .drop input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .drop select { margin-top: 6px; max-width: 100%; font: inherit; font-size: 15px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); }
 
@@ -185,6 +193,14 @@ details.rel li span { font-variant-numeric: tabular-nums; }
     </div>
   </section>
 
+  <section class="dictbar" id="dict-bar" aria-label="품목 별칭 사전">
+    <span class="dict-st" id="dict-st">품목 별칭 사전: 재고 암호를 넣으면 함께 연결합니다.</span>
+    <div class="auto-row" id="dict-pass-row" hidden>
+      <input type="password" id="dict-pass" placeholder="프로젝트 관리 공동 비밀번호" autocomplete="off" aria-label="프로젝트 관리 공동 비밀번호">
+      <button class="btn" type="button" id="dict-go">사전 연결</button>
+    </div>
+  </section>
+
   <div class="bar">
     <div class="chips" id="chips" role="group" aria-label="판정별 보기"></div>
     <div class="tools">
@@ -196,7 +212,7 @@ details.rel li span { font-variant-numeric: tabular-nums; }
 
   <div class="table" id="table" role="table" aria-label="품목별 재고 대조"></div>
   <p class="note">같은 모델이 여러 항목에 있으면 수량을 합쳐 한 줄로 봅니다. 모델이 A+B처럼 구성품으로 적혀 있으면 구성품마다 따로 봅니다. 체크한 재고 품목만 가용 수량에 들어가고, 표기가 비슷한 품목은 직접 확인한 뒤 체크해 주세요.</p>
-  <p class="note muted" style="margin:0">주식회사 핸썬 Hanson Inc. · Version 13 · 넣은 파일은 이 기기 안에서만 읽고 어디에도 보내지 않습니다.</p>
+  <p class="note muted" style="margin:0">주식회사 핸썬 Hanson Inc. · Version 14 · 넣은 파일은 이 기기 안에서만 읽습니다. [별칭 사전에 더하기]를 누른 짝(모델명·품목코드)만 사전에 저장됩니다.</p>
 </div>
 <div class="toast" id="toast" hidden></div>
 <script>if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));</script>
@@ -389,8 +405,10 @@ details.rel li span { font-variant-numeric: tabular-nums; }
   const commonPrefix = (a, b) => { let i = 0; while (i < a.length && i < b.length && a[i] === b[i]) i++; return i; };
 
   function matchPart(part, inv) {
-    const { strong, weak } = keysOf(part);
     const out = [];
+    // '스탠리'처럼 영문·숫자 없는 조각은 매입처 이름이라 모델로 보지 않음
+    if (!/[A-Za-z0-9]/.test(part)) return out;
+    const { strong, weak } = keysOf(part);
     // 헤펠레 8자리 숫자 코드(예: 926.98.110): 숫자가 하나라도 다르면 다른 제품 → 완전히 같을 때만 일치
     const hafele = strong.length === 1 && /^\d{8}$/.test(strong[0]);
     for (const it of inv.items) {
@@ -424,7 +442,17 @@ details.rel li span { font-variant-numeric: tabular-nums; }
     return out;
   }
 
-  function reconcile(specItems, inv) {
+  // 품목 별칭 사전 (프로젝트 관리 구글 시트) → 기호 무시한 별칭 → [{ code, status }]. '대체 납품'은 별칭이 아니라 들어 있지 않음
+  function dictIndex(aliases) {
+    const m = new Map();
+    (aliases || []).forEach((a) => { const k = norm(a.alias); if (k) (m.get(k) || m.set(k, []).get(k)).push(a); });
+    return m;
+  }
+  const SURE = '확실';
+
+  function reconcile(specItems, inv, dict) {
+    const byCode = new Map(inv.items.map((it) => [it.code, it]));
+    const dictHits = (keys) => (dict ? keys.flatMap((k) => dict.get(k) || []) : []);
     // 같은 모델은 하나로 합산
     const groups = new Map();
     for (const s of specItems) {
@@ -436,13 +464,26 @@ details.rel li span { font-variant-numeric: tabular-nums; }
     const lines = [];
     for (const g of groups.values()) {
       const alts = splitModel(g.model || '');
-      const comps = alts.length === 1 && alts[0].length > 1 ? alts[0] : null; // A+B+C → 구성품마다 따로
+      const whole = norm(g.model);
+      // A+B 전체가 사전에 '확실'로 있으면 구성품으로 나누지 않음
+      const wholeSure = dictHits([whole]).some((a) => a.status === SURE);
+      const comps = !wholeSure && alts.length === 1 && alts[0].length > 1 ? alts[0] : null; // A+B+C → 구성품마다 따로
       const parts = comps ? comps.map((p, i) => ({ label: `${i + 1}/${comps.length}`, alts: [p] })) : [{ label: '', alts: alts.map((a) => a.join(' ')) }];
       for (const p of parts) {
         const seen = new Map();
         for (const a of p.alts) for (const m of matchPart(a, inv)) {
           const prev = seen.get(m.it.code);
           if (!prev || (prev.level === 'similar' && m.level === 'exact')) seen.set(m.it.code, m);
+        }
+        // 별칭 사전: '확실'은 바로 일치, '확인 필요'는 후보로만. 재고현황에 없는 코드는 따로 알림
+        const dictOut = [];
+        const keys = [...new Set([...(comps ? [] : [whole]), ...p.alts.map(norm)].filter(Boolean))];
+        for (const a of dictHits(keys)) {
+          const it = byCode.get(a.code), sure = a.status === SURE;
+          if (!it) { if (!dictOut.some((d) => d.code === a.code)) dictOut.push(a); continue; }
+          const prev = seen.get(a.code);
+          if (sure) seen.set(a.code, { it, level: 'exact', why: '별칭 사전', dict: SURE });
+          else if (!prev || prev.level !== 'exact') seen.set(a.code, { it, level: 'similar', why: '별칭 사전 후보 (확인 필요)', dict: a.status });
         }
         // 크로스 체크: 재고의 모델(규격)이 스펙의 품명 쪽에 적혀 있는 경우
         const nName = norm(g.name);
@@ -451,12 +492,13 @@ details.rel li span { font-variant-numeric: tabular-nums; }
           const t = it.tokens.find((x) => x.length >= 5 && /\d/.test(x) && /[A-Z]/.test(x) && nName.includes(x));
           if (t) seen.set(it.code, { it, level: 'similar', why: `스펙 품명에 재고 모델(${t})이 들어 있음` });
         }
-        const matches = [...seen.values()].sort((a, b) => (a.level === b.level ? b.it.avail - a.it.avail : a.level === 'exact' ? -1 : 1));
+        const rank = (m) => (m.dict === SURE ? 0 : m.level === 'exact' ? 1 : 2);
+        const matches = [...seen.values()].sort((a, b) => rank(a) - rank(b) || b.it.avail - a.it.avail);
         const cat = categoryOf(g.name) || categoryOf(g.model);
         const catRe = cat ? CATEGORIES.find((c) => c[0] === cat)[1] : null;
         const related = catRe ? inv.items.filter((it) => !seen.has(it.code) && it.avail > 0 && catRe.test(it.item + ' ' + it.full)).sort((a, b) => b.avail - a.avail) : [];
         lines.push({ codes: g.codes, name: g.name, model: p.alts.join(' / '), fullModel: g.model, part: p.label, unit: g.unit, qty: g.qty,
-          matches, related, category: cat });
+          matches, related, category: cat, dictOut });
       }
     }
     return lines;
@@ -478,6 +520,9 @@ details.rel li span { font-variant-numeric: tabular-nums; }
   }
   // 일치 품목이 여러 개면, 재고가 가장 많은 품목과 품목명이 같은 것만 기본 선택 (좌우·색상 변형은 함께, 다른 제품은 제외)
   const defaultPicks = (line) => {
+    // 별칭 사전 '확실'이 있으면 그것만 기본 선택
+    const sure = line.matches.filter((m) => m.dict === SURE);
+    if (sure.length) return new Set(sure.map((m) => m.it.code));
     const ex = line.matches.filter((m) => m.level === 'exact');
     if (!ex.length) return new Set();
     const lead = norm(ex[0].it.item);
@@ -485,7 +530,7 @@ details.rel li span { font-variant-numeric: tabular-nums; }
   };
   const salePrice = (cost) => (cost == null ? null : Math.round(cost / 0.6 / 100) * 100);
 
-  const api = { parseSpecBook, parseInventory, reconcile, judge, defaultPicks, salePrice, norm };
+  const api = { parseSpecBook, parseInventory, reconcile, judge, defaultPicks, salePrice, norm, dictIndex, SURE };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.HSRecon = api;
 })(typeof window !== 'undefined' ? window : globalThis);
 
@@ -498,7 +543,7 @@ details.rel li span { font-variant-numeric: tabular-nums; }
   const fmt = (n) => (n == null ? '–' : Number(n).toLocaleString('ko-KR'));
   const STATUS = [['ok', '재고 충분'], ['check', '확인 필요'], ['order', '발주 필요']];
 
-  const state = { spec: null, specFile: '', specCand: 0, inv: null, invFile: '', lines: [], picks: new Map(), relOpen: new Set(), filter: null, sample: false };
+  const state = { spec: null, specFile: '', specCand: 0, inv: null, invFile: '', lines: [], picks: new Map(), relOpen: new Set(), filter: null, sample: false, dict: null };
 
   /* ---------- 파일 읽기 ---------- */
   const readWb = (file) => file.arrayBuffer().then((buf) => XLSX.read(buf, { type: 'array', cellFormula: false, cellHTML: false, cellStyles: false }));
@@ -520,6 +565,7 @@ details.rel li span { font-variant-numeric: tabular-nums; }
       if (!inv.items.length) throw new Error('재고 품목이 없습니다.');
       state.inv = inv; state.invFile = file.name; leaveSample();
       $('drop-inv').classList.add('loaded'); renderInvMeta(); recompute();
+      if (!state.dict) dictStatus('품목 별칭 사전에 연결하지 않았습니다. 프로젝트 관리 공동 비밀번호를 넣으면 연결합니다.', true, true);
     } catch (e) { $('inv-meta').textContent = ''; $('inv-err').textContent = e.message || '파일을 읽지 못했습니다.'; $('inv-err').hidden = false; }
   }
   function renderSpecMeta() {
@@ -544,10 +590,14 @@ details.rel li span { font-variant-numeric: tabular-nums; }
   }
 
   /* ---------- 계산 ---------- */
-  function recompute() {
+  // keep = 사전에 짝을 더한 뒤처럼, 사람이 고른 체크를 그대로 둠
+  const lineKey = (l) => l.codes.join(',') + '|' + l.part + '|' + l.model;
+  function recompute(keep) {
     if (!state.spec || !state.inv) { state.lines = []; render(); return; }
-    state.lines = E.reconcile(state.spec.candidates[state.specCand].items, state.inv);
-    state.picks = new Map(state.lines.map((l, i) => [i, E.defaultPicks(l)])); state.relOpen = new Set();
+    const old = keep ? new Map(state.lines.map((l, i) => [lineKey(l), state.picks.get(i)])) : null;
+    state.lines = E.reconcile(state.spec.candidates[state.specCand].items, state.inv, state.dict && state.dict.map);
+    state.picks = new Map(state.lines.map((l, i) => [i, (old && old.get(lineKey(l))) || E.defaultPicks(l)]));
+    if (!keep) state.relOpen = new Set();
     render();
   }
   const judgeAt = (i) => E.judge(state.lines[i], state.picks.get(i));
@@ -608,14 +658,28 @@ details.rel li span { font-variant-numeric: tabular-nums; }
       cb.onchange = () => { cb.checked ? picked.add(it.code) : picked.delete(it.code); render(); };
       const t = el('label', 't'); t.htmlFor = id;
       t.append(el('span', 'code', it.code + ' '), document.createTextNode(it.full));
-      if (m.level !== 'exact') t.append(el('span', 'why', ` · ${m.why}`));
+      if (m.dict === E.SURE) t.append(el('span', 'dict', ' · 별칭 사전'));
+      else if (m.level !== 'exact') t.append(el('span', 'why', ` · ${m.why}`));
       const s = el('div', 's', `랙 ${it.rack || '–'} · ${it.supplier || '–'} · 반입 ${fmt(it.inQ)} · 상용 ${fmt(it.regQ)}` + (it.defQ ? ` · 반재 ${fmt(it.defQ)}(보수용)` : '') + ' · ');
       s.append(it.cost != null ? el('span', 'cost', `입고단가 ${fmt(it.cost)}원`) : document.createTextNode('입고단가 없음'));
       box.append(cb, t, s);
       if (it.memo) box.append(el('div', 'memo', '메모: ' + it.memo));
       cStock.append(box);
     });
+    (l.dictOut || []).forEach((a) => {
+      const d = el('div', 'dictline'); d.append(document.createTextNode(`별칭 사전${a.status === E.SURE ? '' : ' 후보'}: `), el('span', 'code', a.code), document.createTextNode(` ${a.erpName || ''} — 지금 재고현황에 없는 품목입니다.`));
+      cStock.append(d);
+    });
     if (j.multi) cStock.append(el('div', 'warnline', '재고 품목 여러 개를 합쳤습니다. 좌우·마감이 스펙과 같은지 확인해 주세요.'));
+    // 사람이 체크한 짝 중 사전에 '확실'로 없는 것을 사전에 더함
+    const sureCodes = new Set(l.matches.filter((m) => m.dict === E.SURE).map((m) => m.it.code));
+    const newPicks = [...l.matches.map((m) => m.it), ...l.related].filter((it) => picked.has(it.code) && !sureCodes.has(it.code));
+    if (state.dict && state.dict.token && j.key !== 'unused' && newPicks.length && (l.part ? l.model : l.fullModel)) {
+      const b = el('button', 'btn dictadd', newPicks.length > 1 ? `체크한 ${newPicks.length}개를 별칭 사전에 더하기` : '체크한 짝을 별칭 사전에 더하기'); b.type = 'button';
+      b.title = `${l.part ? l.model : l.fullModel} → ${newPicks.map((it) => it.code).join(', ')}`;
+      b.onclick = () => addToDict(b, l, newPicks);
+      cStock.append(b);
+    }
     const relPicked = l.related.filter((it) => picked.has(it.code)).length;
     if (l.related.length && (j.key !== 'ok' || relPicked)) {
       const d = el('details', 'rel');
@@ -722,6 +786,7 @@ details.rel li span { font-variant-numeric: tabular-nums; }
       $('drop-inv').classList.add('loaded'); $('inv-fname').textContent = state.invFile; $('inv-err').hidden = true;
       renderInvMeta(); autoStatus('자동 재고: ' + box.time + ' 기준으로 불러왔습니다.');
       showPass(false); recompute();
+      if (!state.dict) connectDict(pass, true);
     } catch (e) {
       if (e && e.code === 'bad_pass') { sessionPass = null; autoStatus('암호가 맞지 않습니다. 다시 입력해 주세요.', true); showPass(true); }
       else { autoStatus('자동 재고를 여는 중 문제가 생겼습니다. 잠시 뒤 다시 불러와 주세요.', true); $('auto-reload').hidden = false; }
@@ -732,6 +797,54 @@ details.rel li span { font-variant-numeric: tabular-nums; }
   $('auto-reload').onclick = () => { if (sessionPass) loadAuto(sessionPass); else showPass(true); };
   // 암호는 기기에 저장하지 않음. 예전 버전이 저장해 둔 암호도 지움
   store.del(); showPass(true);
+
+  /* ---------- 품목 별칭 사전 (프로젝트 관리 Apps Script) ---------- */
+  // 비밀번호가 맞아야만 사전을 읽고 더할 수 있음. 받은 열쇠(토큰)는 이 창을 닫으면 사라짐 (기기에 저장하지 않음)
+  const DICT_API = 'https://script.google.com/macros/s/AKfycbzpj032IIjYG8NRckkW23FpRkgEcaGXFL6LOTerOGzLO1Ei6VvKFLoE7qwaVzLJWUQjYw/exec';
+  async function dictCall(action, data) {
+    let j;
+    try {
+      const r = await fetch(DICT_API, { method: 'POST', body: JSON.stringify(Object.assign({ action, token: state.dict && state.dict.token }, data)), headers: { 'Content-Type': 'text/plain;charset=utf-8' } });
+      j = await r.json();
+    } catch { throw Object.assign(new Error('별칭 사전 서버에 연결하지 못했습니다.'), { code: 'network' }); }
+    if (!j.ok) throw Object.assign(new Error(j.message || '문제가 생겼습니다.'), { code: j.error });
+    return j;
+  }
+  function dictStatus(msg, bad, askPass) {
+    const s = $('dict-st'); s.textContent = msg; s.classList.toggle('bad', !!bad);
+    $('dict-pass-row').hidden = !askPass;
+  }
+  function setDict(aliases, token) {
+    const sure = aliases.filter((a) => a.status === E.SURE).length;
+    state.dict = { token: token || (state.dict && state.dict.token), aliases, map: E.dictIndex(aliases) };
+    dictStatus(`품목 별칭 사전: ${fmt(aliases.length)}줄 연결됨 (확실 ${fmt(sure)} · 확인 필요 ${fmt(aliases.length - sure)}). '확실'은 바로 맞추고, '확인 필요'는 후보로만 보여 줍니다.`);
+  }
+  // auto = 재고 암호로 자동 연결 (재고 확인 암호가 사전 쪽에 등록되어 있을 때만 됨)
+  async function connectDict(pass, auto) {
+    dictStatus('품목 별칭 사전에 연결하는 중…');
+    try {
+      const j = await dictCall('login', { password: pass, scope: 'dict', auto: !!auto });
+      setDict(j.aliases, j.token); recompute();
+    } catch (e) {
+      if (auto && (e.code === 'no_dict_password' || e.code === 'bad_password')) dictStatus('품목 별칭 사전에 연결하지 않았습니다. 프로젝트 관리 공동 비밀번호를 넣으면 연결합니다.', true, true);
+      else dictStatus('품목 별칭 사전: ' + e.message, true, e.code !== 'locked' || !auto);
+    }
+  }
+  async function addToDict(b, l, picks) {
+    b.disabled = true;
+    const alias = l.part ? l.model : l.fullModel;
+    const src = ((state.spec && state.spec.project) || state.specFile || '') + (l.codes.length ? ' / ' + l.codes.join(', ') : '');
+    try {
+      const j = await dictCall('addAlias', { pairs: picks.map((it) => ({ code: it.code, alias, quoteName: l.name, source: '재고 확인 / ' + src, erpName: it.item, erpSpec: it.spec, supplier: it.supplier })) });
+      setDict(j.aliases); recompute(true);
+      toast(j.added.added || j.added.raised ? `별칭 사전에 더했습니다: ${alias} → ${picks.map((it) => it.code).join(', ')}` : '이미 사전에 있는 짝입니다.');
+    } catch (e) {
+      if (e.code === 'auth') { state.dict.token = null; dictStatus('사전 연결이 끊겼습니다. 다시 연결해 주세요.', true, true); render(); }
+      toast(e.message); b.disabled = false;
+    }
+  }
+  $('dict-go').onclick = () => { const v = $('dict-pass').value; if (!v) { $('dict-pass').focus(); return; } $('dict-pass').value = ''; connectDict(v, false); };
+  $('dict-pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('dict-go').click(); });
 
   /* ---------- 입력 연결 ---------- */
   function wire(dropId, inputId, fn) {
